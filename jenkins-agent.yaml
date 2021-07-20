@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Jenkins agent example
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "General"
+        Parameters:
+          - Environment
+      - Label:
+          default: "Instance"
+        Parameters:
+          - VPC
+          - Subnet
+          - AMI
+          - InstanceType
+          - KeyPair
+          - WhitelistedCIDR
+      - Label:
+          default: "Jenkins"
+        Parameters:
+          - DomainName
+      - Label:
+          default: "Security"
+        Parameters:
+          - KMSKeyID
+    ParameterLabels:
+      AMI:
+        default: "AMI id"
+      DomainName:
+        default: "Domain name"
+      Environment:
+        default: "Environment"
+      InstanceType:
+        default: "Instance type"
+      KeyPair:
+        default: "AWS Key pair to access instance"
+      KMSKeyID:
+        default: "AWS KMS id for volumes"
+      Subnet:
+        default: "Instance subnet"
+      VPC:
+        default: "Instance VPC"
+      WhitelistedCIDR:
+        default: "Usually local subnet CIDR"
+
+Parameters:
+  AMI:
+    Type: AWS::EC2::Image::Id
+    Description: ""
+    Default: "ami-05c4aac08aa7b2a85"
+  DomainName:
+    Type: String
+    Description: ""
+    Default: "controller.domain.lv"
+  Environment:
+    Description: Environment for Naming
+    Type: String
+    Default: "skillboost"
+  InstanceType:
+    Type: String
+    Description: >
+      Specifies the EC2 instance type for jenkins, which is memory intensive usually
+    Default: t3.medium
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: ""
+    Default: "jenkins-key"
+  KMSKeyID: 
+    Type: String
+    Description: ""
+    Default: "df7e6bea-9a1f-4ff5-8221-f520bb0b7de7"
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: ""
+    Default: "subnet-8b3ed3e2"
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: ""
+    Default: "vpc-3e3bd657"
+  WhitelistedCIDR:
+    Type: String
+    Description: ""
+    Default: "172.31.16.0/20"
+

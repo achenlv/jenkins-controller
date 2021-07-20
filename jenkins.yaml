@@ -24,11 +24,26 @@ Metadata:
           default: "Security"
         Parameters:
           - KMSKeyID
-
     ParameterLabels:
+      AMI:
+        default: "AMI id"
+      DomainName:
+        default: "Domain name"
       Environment:
         default: "Environment"
-
+      InstanceType:
+        default: "Instance type"
+      KeyPair:
+        default: "AWS Key pair to access instance"
+      KMSKeyID:
+        default: "AWS KMS id for volumes"
+      Subnet:
+        default: "Instance subnet"
+      VPC:
+        default: "Instance VPC"
+      WhitelistedCIDR:
+        default: "Usually local subnet CIDR"
+        
 Parameters:
   AMI:
     Type: AWS::EC2::Image::Id
