@@ -7,4 +7,5 @@ jenkins-agent.yaml - Jenkins agent
 
 ##To Do
 
-Create one template to use for controller and agent if possible.  
+* Limit IAM policy
+* Create one template to use for controller and agent if possible.  
