@@ -1,0 +1,324 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Jenkins controller example
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "General"
+        Parameters:
+          - Environment
+      - Label:
+          default: "Instance"
+        Parameters:
+          - VPC
+          - Subnet
+          - AMI
+          - InstanceType
+          - KeyPair
+          - WhitelistedCIDR
+      - Label:
+          default: "Jenkins"
+        Parameters:
+          - DomainName
+      - Label:
+          default: "Security"
+        Parameters:
+          - KMSKeyID
+
+    ParameterLabels:
+      Environment:
+        default: "Environment"
+
+Parameters:
+  AMI:
+    Type: AWS::EC2::Image::Id
+    Description: ""
+    Default: "ami-05c4aac08aa7b2a85"
+  DomainName:
+    Type: String
+    Description: ""
+    Default: "controller.domain.lv"
+  Environment:
+    Description: Environment for Naming
+    Type: String
+    Default: "skillboost"
+  InstanceType:
+    Type: String
+    Description: >
+      Specifies the EC2 instance type for jenkins, which is memory intensive usually
+    Default: t3.medium
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: ""
+    Default: "jenkins-key"
+  KMSKeyID: 
+    Type: String
+    Description: ""
+    Default: "df7e6bea-9a1f-4ff5-8221-f520bb0b7de7"
+  Subnet:
+    Type: AWS::EC2::Subnet::Id
+    Description: ""
+    Default: "subnet-8b3ed3e2"
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Description: ""
+    Default: "vpc-3e3bd657"
+  WhitelistedCIDR:
+    Type: String
+    Description: ""
+    Default: "172.31.16.0/20"
+
+Resources:
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      Cooldown: 300
+      DesiredCapacity: 1
+      HealthCheckGracePeriod: 300
+      HealthCheckType: "EC2"
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      MaxSize: 1
+      MinSize: 1
+      Tags:
+        - Key: "Name"
+          Value: !Sub "skillboost-jenkins-controller"
+          PropagateAtLaunch: True
+      TerminationPolicies:
+        - "Default"
+      VPCZoneIdentifier: 
+        -  !Ref Subnet
+
+  EC2IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "sts:AssumeRole"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+      MaxSessionDuration: 3600
+      Policies:
+        - PolicyName: "admin-wow-iam-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "*"
+                Resource:
+                  - "*"
+                  # - !Sub "arn:aws:*:*:${AWS::AccountId}:*/*"
+      RoleName: !Sub "jenkins-${Environment}-controller-iam-role"
+      Tags:
+        - Key: "for"
+          Value: "Jenkins"
+
+  EC2IamInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "jenkins-${Environment}-controller-iam-profile"
+      Roles:
+        - Ref: EC2IamRole
+
+  EC2InstanceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Jenkins instance SG"
+      SecurityGroupIngress:
+        - CidrIp: "84.38.138.29/32"
+          Description: "Default rule to allow all traffic locally."
+          FromPort: 1
+          IpProtocol: "-1"
+          ToPort: 65535
+        - CidrIp: "94.130.226.176/32"
+          Description: "Default rule to allow all traffic locally."
+          FromPort: 1
+          IpProtocol: "-1"
+          ToPort: 65535
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          Description: "HTTP"
+          FromPort: 80
+          IpProtocol: "TCP"
+          ToPort: 80          
+        - CidrIp: "0.0.0.0/0"
+          Description: "HTTPS"
+          FromPort: 443
+          IpProtocol: "TCP"
+          ToPort: 443         
+      Tags:
+        - Key: "For"
+          Value: "Jenkins"
+      VpcId: !Ref VPC
+
+  EC2InstanceSGEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      CidrIp: !Sub "${WhitelistedCIDR}"
+      Description: "Local subnet SSH"
+      GroupId: !Ref EC2InstanceSG
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+
+  EC2InstanceSGIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      CidrIp: !Sub "${WhitelistedCIDR}"
+      Description: "Local subnet SSH"
+      GroupId: !Ref EC2InstanceSG
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+  
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      BlockDeviceMappings:
+        - DeviceName: "/dev/sda1"
+          Ebs:
+            DeleteOnTermination: True
+            VolumeSize: 30
+            VolumeType: "gp2"
+      IamInstanceProfile: !Ref EC2IamInstanceProfile
+      ImageId: !Ref AMI 
+      InstanceMonitoring: False
+      InstanceType: !Ref InstanceType
+      KeyName: !Sub "${KeyPair}"
+      SecurityGroups: 
+        - !Ref EC2InstanceSG
+      # Tags:
+      #   - Key: Name
+      #     Value:
+      #       Join: [ "-", !Ref Environment, 'jenkins', 'ec2']
+      UserData:
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          LOGFILE="/var/log/cloud-init.log"
+          export AWS_ACCOUNT="${AWS::AccountId}"
+          export REGION="${AWS::Region}"
+          export ENVIRONMENT="${Environment}"
+          export VPC="${VPC}"
+          export DOMAIN_NAME="${DomainName}"
+          export KMS_KEY_ID="${KMSKeyID}"
+          export WHITELIST_CIDR="${WhitelistedCIDR}"
+          export DOCKER_VERSION="20.10"
+          apt update
+          apt -y upgrade
+          apt -y install \
+            unzip \
+            apt-transport-https \
+            ca-certificates \
+            curl \
+            gnupg \
+            lsb-release
+          echo "[INFO] Install AWS CLI" | tee -a $LOGFILE
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          echo "[INFO] Prepare installing Docker" | tee -a $LOGFILE
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+          echo \
+            "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+            $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt update
+          echo "[INFO] Installing Docker" | tee -a $LOGFILE
+          apt -y install \
+            docker-ce \
+            docker-ce-cli \
+            containerd.io
+          echo "[INFO] Prepare Dockerfile" | tee -a $LOGFILE
+          cd /tmp/
+          cat << 'EOF' > Dockerfile
+          FROM jenkins/jenkins:2.289.2-lts-jdk11
+          USER root
+          RUN apt-get update && apt-get install -y apt-transport-https \
+                ca-certificates curl gnupg2 \
+                software-properties-common
+          RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
+          RUN apt-key fingerprint 0EBFCD88
+          RUN add-apt-repository \
+                "deb [arch=amd64] https://download.docker.com/linux/debian \
+                $(lsb_release -cs) stable"
+          RUN apt-get update && apt-get install -y docker-ce-cli
+          USER jenkins
+          RUN jenkins-plugin-cli --plugins "blueocean:1.24.7 docker-workflow:1.26"
+          EOF
+          echo "[INFO] Start Jenkins container" | tee -a $LOGFILE
+          docker build -t skillboost-jenkins:0.1 . | tee -a $LOGFILE
+          docker run \
+            --name skillboost-jenkins \
+            --rm \
+            --detach \
+            --env DOCKER_HOST=tcp://docker:2376 \
+            --env DOCKER_CERT_PATH=/certs/client \
+            --env DOCKER_TLS_VERIFY=1 \
+            --env JENKINS_OPTS="--prefix=/jenkins" \
+            --publish 8080:8080 \
+            --publish 50000:50000 \
+            --volume jenkins-data:/var/jenkins_home \
+            --volume jenkins-docker-certs:/certs/client:ro \
+            skillboost-jenkins:0.1  | tee -a $LOGFILE
+          # docker exec skillboost-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: '8080'
+      Protocol: HTTP
+
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+      - Type: forward
+        TargetGroupArn: !Ref TargetGroup
+      Conditions:
+      - Field: path-pattern
+        Values:
+        - "/"
+      ListenerArn: !Ref Listener
+      Priority: 1
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Join [ "-", [!Ref Environment, Jenkins] ]
+      Subnets:
+      # - Fn::ImportValue: !Join [ "-", [ !Ref Environment, "PrivateAz1Subnet"] ] 
+      - "subnet-8b3ed3e2"
+      - "subnet-1a767962"
+      - "subnet-06b19f4c"
+      Scheme: internal
+      SecurityGroups: 
+      # - Fn::ImportValue: !Join [ "-", [ !Ref Environment, "EC2InstanceSG"] ] 
+      - !Ref EC2InstanceSG
+  
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn:
+      - LoadBalancer
+    Properties:
+      # HealthCheckIntervalSeconds: 30
+      # HealthCheckProtocol: HTTP
+      # HealthCheckTimeoutSeconds: 10
+      # HealthyThresholdCount: 4
+      # Matcher:
+      #   HttpCode: '200'
+      Name: !Join [ "-", [!Ref AWS::StackName, "targetgroup"]]
+      Port: 80
+      Protocol: HTTP
+      # Targets:
+      # - Id: !GetAtt LoadBalancer.Instances
+      #   Port: 8080
+      # UnhealthyThresholdCount: 3
+      VpcId: !Ref VPC
+        # Fn::ImportValue: !Join [ "-", [ !Ref Environment, "VPC"] ] 
